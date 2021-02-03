@@ -154,7 +154,7 @@ void core1_entry(void)
 		} else {
 			gpio_put(LED_PIN, 0);
 		}
-	};
+	}
 }
 
 int main(void)
