@@ -44,7 +44,7 @@ static uint8_t USB_BUFFER[BUFFER_SIZE];
 static uint32_t USB_POS = 0;
 static mutex_t USB_MTX;
 
-static inline uart_parity_t databits_usb2uart(uint8_t data_bits)
+static inline uint databits_usb2uart(uint8_t data_bits)
 {
 	switch (data_bits) {
 		case 5:
@@ -70,7 +70,7 @@ static inline uart_parity_t parity_usb2uart(uint8_t usb_parity)
 	}
 }
 
-static inline uart_parity_t stopbits_usb2uart(uint8_t stop_bits)
+static inline uint stopbits_usb2uart(uint8_t stop_bits)
 {
 	switch (stop_bits) {
 		case 2:
