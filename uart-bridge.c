@@ -22,7 +22,7 @@
 #define UART_TX_PIN 0
 #define UART_RX_PIN 1
 
-#define BUFFER_SIZE	64
+#define BUFFER_SIZE 64
 
 #define DEF_BIT_RATE 115200
 #define DEF_STOP_BITS 1
@@ -96,11 +96,11 @@ int update_uart_cfg(void)
 	}
 
 	if ((last_cdc_lc.stop_bits != CDC_LC.stop_bits) ||
-		(last_cdc_lc.parity != CDC_LC.parity) ||
-		(last_cdc_lc.data_bits != CDC_LC.data_bits)) {
+	    (last_cdc_lc.parity != CDC_LC.parity) ||
+	    (last_cdc_lc.data_bits != CDC_LC.data_bits)) {
 		uart_set_format(UART_ID, databits_usb2uart(CDC_LC.data_bits),
-						stopbits_usb2uart(CDC_LC.stop_bits),
-						parity_usb2uart(CDC_LC.parity));
+				stopbits_usb2uart(CDC_LC.stop_bits),
+				parity_usb2uart(CDC_LC.parity));
 		updated = 1;
 	}
 
@@ -108,6 +108,40 @@ int update_uart_cfg(void)
 		memcpy(&last_cdc_lc, &CDC_LC, sizeof(cdc_line_coding_t));
 
 	return updated;
+}
+
+void usb_cdc_process(void)
+{
+	uint32_t count;
+	uint32_t len;
+
+	tud_cdc_get_line_coding(&CDC_LC);
+
+	/* Read bytes from USB */
+	if (tud_cdc_available()) {
+		mutex_enter_blocking(&USB_MTX);
+
+		len = MIN(tud_cdc_available(), BUFFER_SIZE - USB_POS);
+		if (len) {
+			count = tud_cdc_read(USB_BUFFER, len);
+			USB_POS += count;
+		}
+
+		mutex_exit(&USB_MTX);
+	}
+
+	/* Write bytes to USB */
+	if (UART_POS) {
+		mutex_enter_blocking(&UART_MTX);
+
+		count = tud_cdc_write(UART_BUFFER, UART_POS);
+		if (count) {
+			UART_POS -= count;
+			tud_cdc_write_flush();
+		}
+
+		mutex_exit(&UART_MTX);
+	}
 }
 
 void core1_entry(void)
@@ -118,38 +152,7 @@ void core1_entry(void)
 		tud_task();
 
 		if (tud_cdc_connected()) {
-			uint32_t count;
-
-			tud_cdc_get_line_coding(&CDC_LC);
-
-			/* Read bytes from USB */
-			if (tud_cdc_available()) {
-				uint32_t len;
-
-				mutex_enter_blocking(&USB_MTX);
-
-				len = MIN(tud_cdc_available(), BUFFER_SIZE - USB_POS);
-				if (len) {
-					count = tud_cdc_read(USB_BUFFER, len);
-					USB_POS += count;
-				}
-
-				mutex_exit(&USB_MTX);
-			}
-
-			/* Write bytes to USB */
-			if (UART_POS) {
-				mutex_enter_blocking(&UART_MTX);
-
-				count = tud_cdc_write(UART_BUFFER, UART_POS);
-				if (count) {
-					UART_POS -= count;
-					tud_cdc_write_flush();
-				}
-
-				mutex_exit(&UART_MTX);
-			}
-
+			usb_cdc_process();
 			gpio_put(LED_PIN, 1);
 		} else {
 			gpio_put(LED_PIN, 0);
@@ -175,8 +178,8 @@ int main(void)
 
 	uart_set_hw_flow(UART_ID, false, false);
 	uart_set_format(UART_ID, databits_usb2uart(CDC_LC.data_bits),
-		stopbits_usb2uart(CDC_LC.stop_bits),
-		parity_usb2uart(CDC_LC.parity));
+			stopbits_usb2uart(CDC_LC.stop_bits),
+			parity_usb2uart(CDC_LC.parity));
 
 	multicore_launch_core1(core1_entry);
 
@@ -187,7 +190,8 @@ int main(void)
 		if (uart_is_readable(UART_ID)) {
 			mutex_enter_blocking(&UART_MTX);
 
-			while (uart_is_readable(UART_ID) && UART_POS < BUFFER_SIZE) {
+			while (uart_is_readable(UART_ID) &&
+			       UART_POS < BUFFER_SIZE) {
 				UART_BUFFER[UART_POS] = uart_getc(UART_ID);
 				UART_POS++;
 			}
