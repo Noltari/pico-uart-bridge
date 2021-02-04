@@ -30,7 +30,7 @@
 #define DEF_DATA_BITS 8
 
 static cdc_line_coding_t CDC_LC = {
-	.bit_rate = DEF_STOP_BITS,
+	.bit_rate = DEF_BIT_RATE,
 	.stop_bits = DEF_STOP_BITS,
 	.parity = DEF_PARITY,
 	.data_bits = DEF_DATA_BITS,
