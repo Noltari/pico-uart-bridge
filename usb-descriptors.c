@@ -31,8 +31,17 @@
 #define USBD_VID (0x2E8A) // Raspberry Pi
 #define USBD_PID (0x000a) // Raspberry Pi Pico SDK CDC
 
-#define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+#define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN * CFG_TUD_CDC)
 #define USBD_MAX_POWER_MA (250)
+
+enum
+{
+  ITF_NUM_CDC_0 = 0,
+  ITF_NUM_CDC_0_DATA,
+  ITF_NUM_CDC_1,
+  ITF_NUM_CDC_1_DATA,
+  ITF_NUM_TOTAL
+};
 
 #define USBD_ITF_CDC (0) // needs 2 interfaces
 #define USBD_ITF_MAX (2)
@@ -48,6 +57,12 @@
 #define USBD_STR_PRODUCT (0x02)
 #define USBD_STR_SERIAL (0x03)
 #define USBD_STR_CDC (0x04)
+
+#define EPNUM_CDC_0_NOTIF (0x81)
+#define EPNUM_CDC_0_DATA (0x02)
+
+#define EPNUM_CDC_1_NOTIF (0x84)
+#define EPNUM_CDC_1_DATA (0x05)
 
 // Note: descriptors returned from callbacks must exist long enough for transfer to complete
 
@@ -69,11 +84,14 @@ static const tusb_desc_device_t usbd_desc_device = {
 };
 
 static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
-    TUD_CONFIG_DESCRIPTOR(1, USBD_ITF_MAX, USBD_STR_0, USBD_DESC_LEN,
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, USBD_STR_0, USBD_DESC_LEN,
         TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, USBD_MAX_POWER_MA),
 
-    TUD_CDC_DESCRIPTOR(USBD_ITF_CDC, USBD_STR_CDC, USBD_CDC_EP_CMD,
-        USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_0, USBD_STR_CDC, EPNUM_CDC_0_NOTIF,
+        USBD_CDC_CMD_MAX_SIZE, EPNUM_CDC_0_DATA, 0x80 | EPNUM_CDC_0_DATA, USBD_CDC_IN_OUT_MAX_SIZE),
+
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_1, USBD_STR_CDC, EPNUM_CDC_1_NOTIF,
+        USBD_CDC_CMD_MAX_SIZE, EPNUM_CDC_1_DATA, 0x80 | EPNUM_CDC_1_DATA, USBD_CDC_IN_OUT_MAX_SIZE),
 };
 
 static const char *const usbd_desc_str[] = {

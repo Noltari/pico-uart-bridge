@@ -7,20 +7,14 @@
 #include <hardware/structs/sio.h>
 #include <hardware/uart.h>
 #include <pico/multicore.h>
-#include <pico/stdio_usb.h>
 #include <pico/stdlib.h>
 #include <tusb.h>
-#include <string.h>
 
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
 #endif /* MIN */
 
 #define LED_PIN 25
-
-#define UART_ID uart0
-#define UART_TX_PIN 0
-#define UART_RX_PIN 1
 
 #define BUFFER_SIZE 64
 
@@ -29,20 +23,36 @@
 #define DEF_PARITY 0
 #define DEF_DATA_BITS 8
 
-static cdc_line_coding_t CDC_LC = {
-	.bit_rate = DEF_BIT_RATE,
-	.stop_bits = DEF_STOP_BITS,
-	.parity = DEF_PARITY,
-	.data_bits = DEF_DATA_BITS,
+typedef struct {
+	uart_inst_t *const inst;
+	uint8_t tx_pin;
+	uint8_t rx_pin;
+} uart_id_t;
+
+typedef struct {
+	cdc_line_coding_t usb_lc;
+	cdc_line_coding_t uart_lc;
+	uint8_t uart_buffer[BUFFER_SIZE];
+	uint32_t uart_pos;
+	mutex_t uart_mtx;
+	uint8_t usb_buffer[BUFFER_SIZE];
+	uint32_t usb_pos;
+	mutex_t usb_mtx;
+} uart_data_t;
+
+const uart_id_t UART_ID[CFG_TUD_CDC] = {
+	{
+		.inst = uart0,
+		.tx_pin = 0,
+		.rx_pin = 1,
+	}, {
+		.inst = uart1,
+		.tx_pin = 4,
+		.rx_pin = 5,
+	}
 };
 
-static uint8_t UART_BUFFER[BUFFER_SIZE];
-static uint32_t UART_POS = 0;
-static mutex_t UART_MTX;
-
-static uint8_t USB_BUFFER[BUFFER_SIZE];
-static uint32_t USB_POS = 0;
-static mutex_t USB_MTX;
+uart_data_t UART_DATA[CFG_TUD_CDC];
 
 static inline uint databits_usb2uart(uint8_t data_bits)
 {
@@ -80,68 +90,75 @@ static inline uint stopbits_usb2uart(uint8_t stop_bits)
 	}
 }
 
-int update_uart_cfg(void)
+void update_uart_cfg(uint8_t itf)
 {
-	static cdc_line_coding_t last_cdc_lc = {
-		.bit_rate = DEF_STOP_BITS,
-		.stop_bits = DEF_STOP_BITS,
-		.parity = DEF_PARITY,
-		.data_bits = DEF_DATA_BITS,
-	};
-	int updated = 0;
+	const uart_id_t *ui = &UART_ID[itf];
+	uart_data_t *ud = &UART_DATA[itf];
 
-	if (last_cdc_lc.bit_rate != CDC_LC.bit_rate) {
-		uart_set_baudrate(UART_ID, CDC_LC.bit_rate);
-		updated = 1;
+	if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
+		uart_set_baudrate(ui->inst, ud->usb_lc.bit_rate);
+		ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
 	}
 
-	if ((last_cdc_lc.stop_bits != CDC_LC.stop_bits) ||
-	    (last_cdc_lc.parity != CDC_LC.parity) ||
-	    (last_cdc_lc.data_bits != CDC_LC.data_bits)) {
-		uart_set_format(UART_ID, databits_usb2uart(CDC_LC.data_bits),
-				stopbits_usb2uart(CDC_LC.stop_bits),
-				parity_usb2uart(CDC_LC.parity));
-		updated = 1;
+	if ((ud->usb_lc.stop_bits != ud->uart_lc.stop_bits) ||
+	    (ud->usb_lc.parity != ud->uart_lc.parity) ||
+	    (ud->usb_lc.data_bits != ud->uart_lc.data_bits)) {
+		uart_set_format(ui->inst,
+				databits_usb2uart(ud->usb_lc.data_bits),
+				stopbits_usb2uart(ud->usb_lc.stop_bits),
+				parity_usb2uart(ud->usb_lc.parity));
+		ud->uart_lc.data_bits = ud->usb_lc.data_bits;
+		ud->uart_lc.parity = ud->usb_lc.parity;
+		ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
 	}
-
-	if (updated)
-		memcpy(&last_cdc_lc, &CDC_LC, sizeof(cdc_line_coding_t));
-
-	return updated;
 }
 
-void usb_cdc_process(void)
-{
-	uint32_t count;
-	uint32_t len;
+void usb_read_bytes(uint8_t itf) {
+	uint32_t len = tud_cdc_n_available(itf);
 
-	tud_cdc_get_line_coding(&CDC_LC);
+	if (len) {
+		uart_data_t *ud = &UART_DATA[itf];
 
-	/* Read bytes from USB */
-	if (tud_cdc_available()) {
-		mutex_enter_blocking(&USB_MTX);
+		mutex_enter_blocking(&ud->usb_mtx);
 
-		len = MIN(tud_cdc_available(), BUFFER_SIZE - USB_POS);
+		len = MIN(len, BUFFER_SIZE - ud->usb_pos);
 		if (len) {
-			count = tud_cdc_read(USB_BUFFER, len);
-			USB_POS += count;
+			uint32_t count;
+
+			count = tud_cdc_n_read(itf, ud->usb_buffer, len);
+			ud->usb_pos += count;
 		}
 
-		mutex_exit(&USB_MTX);
+		mutex_exit(&ud->usb_mtx);
 	}
+}
 
-	/* Write bytes to USB */
-	if (UART_POS) {
-		mutex_enter_blocking(&UART_MTX);
+void usb_write_bytes(uint8_t itf) {
+	uart_data_t *ud = &UART_DATA[itf];
 
-		count = tud_cdc_write(UART_BUFFER, UART_POS);
+	if (ud->uart_pos) {
+		uint32_t count;
+
+		mutex_enter_blocking(&ud->uart_mtx);
+
+		count = tud_cdc_n_write(itf, ud->uart_buffer, ud->uart_pos);
 		if (count) {
-			UART_POS -= count;
-			tud_cdc_write_flush();
+			ud->uart_pos -= count;
+			tud_cdc_n_write_flush(itf);
 		}
 
-		mutex_exit(&UART_MTX);
+		mutex_exit(&ud->uart_mtx);
 	}
+}
+
+void usb_cdc_process(uint8_t itf)
+{
+	uart_data_t *ud = &UART_DATA[itf];
+	int con = tud_cdc_n_connected(itf);
+
+	tud_cdc_n_get_line_coding(itf, &ud->usb_lc);
+	usb_read_bytes(itf);
+	usb_write_bytes(itf);
 }
 
 void core1_entry(void)
@@ -149,64 +166,110 @@ void core1_entry(void)
 	tusb_init();
 
 	while (1) {
-		tud_task();
+		int itf;
+		int con = 0;
 
-		if (tud_cdc_connected()) {
-			usb_cdc_process();
-			gpio_put(LED_PIN, 1);
-		} else {
-			gpio_put(LED_PIN, 0);
+		tud_task();
+	
+		for (itf = 0; itf < CFG_TUD_CDC; itf++) {
+			if (tud_cdc_n_connected(itf)) {
+				con = 1;
+				usb_cdc_process(itf);
+			}
 		}
+
+		gpio_put(LED_PIN, con);
 	}
+}
+
+void uart_read_bytes(uint8_t itf) {
+	const uart_id_t *ui = &UART_ID[itf];
+
+	if (uart_is_readable(ui->inst)) {
+		uart_data_t *ud = &UART_DATA[itf];
+
+		mutex_enter_blocking(&ud->uart_mtx);
+
+		while (uart_is_readable(ui->inst) &&
+			ud->uart_pos < BUFFER_SIZE) {
+			ud->uart_buffer[ud->uart_pos] = uart_getc(ui->inst);
+			ud->uart_pos++;
+		}
+
+		mutex_exit(&ud->uart_mtx);
+	}
+}
+
+void uart_write_bytes(uint8_t itf) {
+	uart_data_t *ud = &UART_DATA[itf];
+
+	if (ud->usb_pos) {
+		const uart_id_t *ui = &UART_ID[itf];
+
+		mutex_enter_blocking(&ud->usb_mtx);
+
+		uart_write_blocking(ui->inst, ud->usb_buffer, ud->usb_pos);
+		ud->usb_pos = 0;
+
+		mutex_exit(&ud->usb_mtx);
+	}
+}
+
+void init_uart_data(uint8_t itf) {
+	const uart_id_t *ui = &UART_ID[itf];
+	uart_data_t *ud = &UART_DATA[itf];
+
+	/* Pinmux */
+	gpio_set_function(ui->tx_pin, GPIO_FUNC_UART);
+	gpio_set_function(ui->rx_pin, GPIO_FUNC_UART);
+
+	/* USB CDC LC */
+	ud->usb_lc.bit_rate = DEF_BIT_RATE;
+	ud->usb_lc.data_bits = DEF_DATA_BITS;
+	ud->usb_lc.parity = DEF_PARITY;
+	ud->usb_lc.stop_bits = DEF_STOP_BITS;
+
+	/* UART LC */
+	ud->uart_lc.bit_rate = DEF_BIT_RATE;
+	ud->uart_lc.data_bits = DEF_DATA_BITS;
+	ud->uart_lc.parity = DEF_PARITY;
+	ud->uart_lc.stop_bits = DEF_STOP_BITS;
+
+	/* Buffer */
+	ud->uart_pos = 0;
+	ud->usb_pos = 0;
+
+	/* Mutex */
+	mutex_init(&ud->uart_mtx);
+	mutex_init(&ud->usb_mtx);
+
+	/* UART start */
+	uart_init(ui->inst, ud->usb_lc.bit_rate);
+	uart_set_hw_flow(ui->inst, false, false);
+	uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
+			stopbits_usb2uart(ud->usb_lc.stop_bits),
+			parity_usb2uart(ud->usb_lc.parity));
 }
 
 int main(void)
 {
 	uint8_t ch;
 	int rc;
+	int itf;
 
-	mutex_init(&UART_MTX);
-	mutex_init(&USB_MTX);
+	for (itf = 0; itf < CFG_TUD_CDC; itf++)
+		init_uart_data(itf);
 
 	gpio_init(LED_PIN);
 	gpio_set_dir(LED_PIN, GPIO_OUT);
 
-	uart_init(UART_ID, CDC_LC.bit_rate);
-
-	gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-	gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-
-	uart_set_hw_flow(UART_ID, false, false);
-	uart_set_format(UART_ID, databits_usb2uart(CDC_LC.data_bits),
-			stopbits_usb2uart(CDC_LC.stop_bits),
-			parity_usb2uart(CDC_LC.parity));
-
 	multicore_launch_core1(core1_entry);
 
 	while (1) {
-		update_uart_cfg();
-
-		/* Read bytes from UART */
-		if (uart_is_readable(UART_ID)) {
-			mutex_enter_blocking(&UART_MTX);
-
-			while (uart_is_readable(UART_ID) &&
-			       UART_POS < BUFFER_SIZE) {
-				UART_BUFFER[UART_POS] = uart_getc(UART_ID);
-				UART_POS++;
-			}
-
-			mutex_exit(&UART_MTX);
-		}
-
-		/* Write bytes to UART */
-		if (USB_POS) {
-			mutex_enter_blocking(&USB_MTX);
-
-			uart_write_blocking(UART_ID, USB_BUFFER, USB_POS);
-			USB_POS = 0;
-
-			mutex_exit(&USB_MTX);
+		for (itf = 0; itf < CFG_TUD_CDC; itf++) {
+			update_uart_cfg(itf);
+			uart_read_bytes(itf);
+			uart_write_bytes(itf);
 		}
 	}
 
