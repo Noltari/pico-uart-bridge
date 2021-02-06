@@ -154,7 +154,6 @@ void usb_write_bytes(uint8_t itf) {
 void usb_cdc_process(uint8_t itf)
 {
 	uart_data_t *ud = &UART_DATA[itf];
-	int con = tud_cdc_n_connected(itf);
 
 	tud_cdc_n_get_line_coding(itf, &ud->usb_lc);
 	usb_read_bytes(itf);
@@ -253,8 +252,6 @@ void init_uart_data(uint8_t itf) {
 
 int main(void)
 {
-	uint8_t ch;
-	int rc;
 	int itf;
 
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
