@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  - push
+  - pull_request
+
+env:
+  DEFAULT_PYTHON: 3.9
+
+jobs:
+  pico:
+    name: Raspberry Pi Pico compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code from GitHub
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Generate RPi Pico binaries
+        run: |
+          ./build.sh
+
+      - name: 'Upload RPi Pico binary'
+        uses: actions/upload-artifact@v2
+        with:
+          name: pico-uart-bridge.uf2
+          path: build/uart_bridge.uf2
+          retention-days: 5
