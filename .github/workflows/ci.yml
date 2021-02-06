@@ -9,8 +9,8 @@ env:
 
 jobs:
   pico:
-    name: Raspberry Pi Pico compilation
-    runs-on: ubuntu-latest
+    name: RPi Pico compilation
+    runs-on: ubuntu-20.04
     steps:
       - name: Check out code from GitHub
         uses: actions/checkout@v2
