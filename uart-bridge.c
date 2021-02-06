@@ -8,6 +8,7 @@
 #include <hardware/uart.h>
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
+#include <string.h>
 #include <tusb.h>
 
 #if !defined(MIN)
@@ -147,12 +148,15 @@ void usb_write_bytes(uint8_t itf) {
 		mutex_enter_blocking(&ud->uart_mtx);
 
 		count = tud_cdc_n_write(itf, ud->uart_buffer, ud->uart_pos);
-		if (count) {
-			ud->uart_pos -= count;
-			tud_cdc_n_write_flush(itf);
-		}
+		if (count < ud->uart_pos)
+			memcpy(ud->uart_buffer, &ud->uart_buffer[count],
+			       ud->uart_pos - count);
+		ud->uart_pos -= count;
 
 		mutex_exit(&ud->uart_mtx);
+
+		if (count)
+			tud_cdc_n_write_flush(itf);
 	}
 }
 
