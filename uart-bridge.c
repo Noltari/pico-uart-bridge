@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
 	cdc_line_coding_t usb_lc;
 	cdc_line_coding_t uart_lc;
+	mutex_t lc_mtx;
 	uint8_t uart_buffer[BUFFER_SIZE];
 	uint32_t uart_pos;
 	mutex_t uart_mtx;
@@ -95,6 +96,8 @@ void update_uart_cfg(uint8_t itf)
 	const uart_id_t *ui = &UART_ID[itf];
 	uart_data_t *ud = &UART_DATA[itf];
 
+	mutex_enter_blocking(&ud->lc_mtx);
+
 	if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
 		uart_set_baudrate(ui->inst, ud->usb_lc.bit_rate);
 		ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
@@ -111,6 +114,8 @@ void update_uart_cfg(uint8_t itf)
 		ud->uart_lc.parity = ud->usb_lc.parity;
 		ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
 	}
+
+	mutex_exit(&ud->lc_mtx);
 }
 
 void usb_read_bytes(uint8_t itf) {
@@ -155,7 +160,10 @@ void usb_cdc_process(uint8_t itf)
 {
 	uart_data_t *ud = &UART_DATA[itf];
 
+	mutex_enter_blocking(&ud->lc_mtx);
 	tud_cdc_n_get_line_coding(itf, &ud->usb_lc);
+	mutex_exit(&ud->lc_mtx);
+
 	usb_read_bytes(itf);
 	usb_write_bytes(itf);
 }
@@ -239,6 +247,7 @@ void init_uart_data(uint8_t itf) {
 	ud->usb_pos = 0;
 
 	/* Mutex */
+	mutex_init(&ud->lc_mtx);
 	mutex_init(&ud->uart_mtx);
 	mutex_init(&ud->usb_mtx);
 
