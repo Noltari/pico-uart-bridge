@@ -131,7 +131,7 @@ void usb_read_bytes(uint8_t itf) {
 		if (len) {
 			uint32_t count;
 
-			count = tud_cdc_n_read(itf, ud->usb_buffer, len);
+			count = tud_cdc_n_read(itf, &ud->usb_buffer[ud->usb_pos], len);
 			ud->usb_pos += count;
 		}
 
