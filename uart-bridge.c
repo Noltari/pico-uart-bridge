@@ -17,7 +17,7 @@
 
 #define LED_PIN 25
 
-#define BUFFER_SIZE 64
+#define BUFFER_SIZE 256
 
 #define DEF_BIT_RATE 115200
 #define DEF_STOP_BITS 1
