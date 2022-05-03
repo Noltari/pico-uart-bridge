@@ -267,6 +267,8 @@ int main(void)
 {
 	int itf;
 
+	set_sys_clock_khz(250000, false);
+
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
 		init_uart_data(itf);
 
