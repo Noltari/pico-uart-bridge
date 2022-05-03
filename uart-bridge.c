@@ -11,6 +11,10 @@
 #include <string.h>
 #include <tusb.h>
 
+#if !defined(BIT)
+#define BIT(a) (1 << a)
+#endif /* BIT */
+
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
 #endif /* MIN */
@@ -19,19 +23,26 @@
 
 #define BUFFER_SIZE 256
 
+#define DEF_HW_FLOW false
 #define DEF_BIT_RATE 115200
 #define DEF_STOP_BITS 1
 #define DEF_PARITY 0
 #define DEF_DATA_BITS 8
 
+#define USB_LS_RTS BIT(1)
+
 typedef struct {
 	uart_inst_t *const inst;
 	uint8_t tx_pin;
 	uint8_t rx_pin;
+	uint8_t cts_pin;
+	uint8_t rts_pin;
 } uart_id_t;
 
 typedef struct {
+	bool usb_hf;
 	cdc_line_coding_t usb_lc;
+	bool uart_hf;
 	cdc_line_coding_t uart_lc;
 	mutex_t lc_mtx;
 	uint8_t uart_buffer[BUFFER_SIZE];
@@ -47,10 +58,14 @@ const uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.inst = uart0,
 		.tx_pin = 0,
 		.rx_pin = 1,
+		.cts_pin = 2,
+		.rts_pin = 3,
 	}, {
 		.inst = uart1,
 		.tx_pin = 4,
 		.rx_pin = 5,
+		.cts_pin = 6,
+		.rts_pin = 7,
 	}
 };
 
@@ -98,6 +113,11 @@ void update_uart_cfg(uint8_t itf)
 	uart_data_t *ud = &UART_DATA[itf];
 
 	mutex_enter_blocking(&ud->lc_mtx);
+
+	if (ud->usb_hf != ud->uart_hf) {
+		uart_set_hw_flow(ui->inst, ud->usb_hf, ud->usb_hf);
+		ud->uart_hf = ud->usb_hf;
+	}
 
 	if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
 		uart_set_baudrate(ui->inst, ud->usb_lc.bit_rate);
@@ -165,6 +185,7 @@ void usb_cdc_process(uint8_t itf)
 	uart_data_t *ud = &UART_DATA[itf];
 
 	mutex_enter_blocking(&ud->lc_mtx);
+	ud->usb_hf = !!(tud_cdc_n_get_line_state(itf) & USB_LS_RTS);
 	tud_cdc_n_get_line_coding(itf, &ud->usb_lc);
 	mutex_exit(&ud->lc_mtx);
 
@@ -233,14 +254,18 @@ void init_uart_data(uint8_t itf) {
 	/* Pinmux */
 	gpio_set_function(ui->tx_pin, GPIO_FUNC_UART);
 	gpio_set_function(ui->rx_pin, GPIO_FUNC_UART);
+	gpio_set_function(ui->cts_pin, GPIO_FUNC_UART);
+	gpio_set_function(ui->rts_pin, GPIO_FUNC_UART);
 
 	/* USB CDC LC */
+	ud->usb_hf = DEF_HW_FLOW;
 	ud->usb_lc.bit_rate = DEF_BIT_RATE;
 	ud->usb_lc.data_bits = DEF_DATA_BITS;
 	ud->usb_lc.parity = DEF_PARITY;
 	ud->usb_lc.stop_bits = DEF_STOP_BITS;
 
 	/* UART LC */
+	ud->uart_hf = DEF_HW_FLOW;
 	ud->uart_lc.bit_rate = DEF_BIT_RATE;
 	ud->uart_lc.data_bits = DEF_DATA_BITS;
 	ud->uart_lc.parity = DEF_PARITY;
@@ -257,7 +282,7 @@ void init_uart_data(uint8_t itf) {
 
 	/* UART start */
 	uart_init(ui->inst, ud->usb_lc.bit_rate);
-	uart_set_hw_flow(ui->inst, false, false);
+	uart_set_hw_flow(ui->inst, DEF_HW_FLOW, DEF_HW_FLOW);
 	uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
 			stopbits_usb2uart(ud->usb_lc.stop_bits),
 			parity_usb2uart(ud->usb_lc.parity));
