@@ -7,6 +7,7 @@ main () {
 	local cur_dir=$PWD
 
 	if [ ! -d "$PICO_SDK_DIR/.git" ]; then
+		git submodule sync --recursive
 		git submodule update --init --recursive
 	fi
 
