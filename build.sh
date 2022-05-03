@@ -1,22 +1,17 @@
-#!/bin/sh
+#!/bin/bash
 
-BUILD_DIR=build
-PICO_SDK_DIR=pico-sdk
+BASE_DIR="$(dirname ${BASH_SOURCE[0]})"
+BUILD_DIR=$BASE_DIR/build
+PICO_SDK_DIR=$BASE_DIR/pico-sdk
 
-main () {
-	local cur_dir=$PWD
-
+main() {
 	if [ ! -d "$PICO_SDK_DIR/.git" ]; then
 		git submodule sync --recursive
 		git submodule update --init --recursive
 	fi
 
-	mkdir -p $BUILD_DIR
-	cd $BUILD_DIR
-	cmake ../
-	make
-
-	cd $cur_dir
+	cmake -B $BUILD_DIR -S $BASE_DIR
+	make -C $BUILD_DIR
 }
 
 main $@
