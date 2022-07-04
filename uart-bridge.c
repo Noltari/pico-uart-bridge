@@ -10,6 +10,9 @@
 #include <pico/stdlib.h>
 #include <string.h>
 #include <tusb.h>
+#include <hardware/flash.h>
+
+#include "serial.h"
 
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
@@ -263,11 +266,22 @@ void init_uart_data(uint8_t itf) {
 			parity_usb2uart(ud->usb_lc.parity));
 }
 
+static inline void init_serial() {
+	uint8_t id[8];
+	flash_get_unique_id(id);
+	for (int i = 0; i < 8; ++i) {
+		sprintf(serial + 2 * i, "%X", id[i]);
+	}
+	serial[16] = '\0';
+}
+
 int main(void)
 {
 	int itf;
 
 	set_sys_clock_khz(250000, false);
+
+	init_serial();
 
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
 		init_uart_data(itf);
