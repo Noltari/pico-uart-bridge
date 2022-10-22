@@ -32,6 +32,10 @@ typedef struct {
 	uint8_t rts_pin;
 	uint8_t cts_pin;
 #endif
+#ifdef LINE_CONTROL
+	uint8_t dtr_pin;
+	uint8_t dsr_pin;
+#endif
 } uart_id_t;
 
 typedef struct {
@@ -55,13 +59,21 @@ const uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.cts_pin = 2,
 		.rts_pin = 3,
 #endif
+#ifdef LINE_CONTROL
+		.dtr_pin = 4,
+		.dsr_pin = 5,
+#endif
 	}, {
 		.inst = uart1,
-		.tx_pin = 4,
-		.rx_pin = 5,
+		.tx_pin = 8,
+		.rx_pin = 9,
 #ifdef FLOW_CONTROL
-		.cts_pin = 6,
-		.rts_pin = 7,
+		.cts_pin = 10,
+		.rts_pin = 11,
+#endif
+#ifdef LINE_CONTROL
+		.dtr_pin = 12,
+		.dsr_pin = 13,
 #endif
 	}
 };
@@ -250,6 +262,13 @@ void init_uart_data(uint8_t itf) {
 	gpio_set_function(ui->cts_pin, GPIO_FUNC_UART);
 #endif
 
+#ifdef LINE_CONTROL
+	gpio_init(ui->dtr_pin);
+	gpio_set_dir(ui->dtr_pin, GPIO_OUT);
+	gpio_init(ui->dsr_pin);
+	gpio_set_dir(ui->dsr_pin, GPIO_IN);
+#endif
+
 	/* USB CDC LC */
 	ud->usb_lc.bit_rate = DEF_BIT_RATE;
 	ud->usb_lc.data_bits = DEF_DATA_BITS;
@@ -282,6 +301,16 @@ void init_uart_data(uint8_t itf) {
 			stopbits_usb2uart(ud->usb_lc.stop_bits),
 			parity_usb2uart(ud->usb_lc.parity));
 }
+
+#ifdef LINE_CONTROL
+/* Invoked when line state has changed */
+void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
+{
+	const uart_id_t *ui = &UART_ID[itf];
+
+	gpio_put(ui->dtr_pin, dtr);
+}
+#endif
 
 int main(void)
 {

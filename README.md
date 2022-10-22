@@ -11,23 +11,45 @@ This software is provided without warranty, according to the MIT License, and sh
 Raspberry Pi Pico Pinout
 ------------------------
 
+UART0:
 | Raspberry Pi Pico GPIO | Function  |
 |:----------------------:|:---------:|
-| GPIO0 (Pin 1)          | UART0 TX  |
-| GPIO1 (Pin 2)          | UART0 RX  |
-| GPIO2 (Pin 4)          | UART0 CTS |
-| GPIO3 (Pin 5)          | UART0 RTS |
-| GPIO4 (Pin 6)          | UART1 TX  |
-| GPIO5 (Pin 7)          | UART1 RX  |
-| GPIO6 (Pin 9)          | UART1 CTS |
-| GPIO7 (Pin 10)         | UART1 RTS |
+| GPIO0 (Pin 1)          | TX        |
+| GPIO1 (Pin 2)          | RX        |
+| GPIO2 (Pin 4)          | CTS       |
+| GPIO3 (Pin 5)          | RTS       |
+| GPIO4 (Pin 6)          | DTR       |
+| GPIO5 (Pin 7)          | DSR       |
 
-Optional Hardware Flow-control
+UART1:
+| Raspberry Pi Pico GPIO | Function  |
+|:----------------------:|:---------:|
+| GPIO8  (Pin 11)        | TX        |
+| GPIO9  (Pin 12)        | RX        |
+| GPIO10 (Pin 14)        | CTS       |
+| GPIO11 (Pin 15)        | RTS       |
+| GPIO12 (Pin 16)        | DTR       |
+| GPIO13 (Pin 17)        | DSR       |
+
+Optional Hardware Flow and Line control
 ------------------------------
 
-Hardware Flow-control is disabled by default, but can be compiled in by running:
+Hardware Flow-control (RTS/CTS) is disabled by default, but can be compiled in by running:
 
 ``` bash
 cmake -DFLOW_CONTROL .
+make
+```
+
+Line control (DTR/DSR) is disabled by default, but can be compiled in by running:
+
+``` bash
+cmake -DLINE_CONTROL .
+make
+```
+
+To enable both:
+``` bash
+cmake -DLINE_CONTROL -DFLOW_CONTROL .
 make
 ```
