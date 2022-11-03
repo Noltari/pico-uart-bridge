@@ -1,12 +1,9 @@
 name: CI
 
-on:
-  - push
-  - pull_request
+on: [push, pull_request]
 
 jobs:
-  pico:
-    name: RPi Pico compilation
+  CI:
     runs-on: ubuntu-20.04
     steps:
       - name: 'Check out code'
