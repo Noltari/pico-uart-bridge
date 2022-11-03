@@ -7,7 +7,7 @@ include(pico-sdk/pico_sdk_init.cmake)
 project(pico_uart_bridge)
 
 pico_sdk_init()
-  
+
 add_executable(uart_bridge uart-bridge.c usb-descriptors.c)
 
 target_include_directories(uart_bridge PUBLIC
