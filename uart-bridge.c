@@ -269,6 +269,8 @@ int main(void)
 
 	set_sys_clock_khz(250000, false);
 
+	usbd_serial_init();
+
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
 		init_uart_data(itf);
 

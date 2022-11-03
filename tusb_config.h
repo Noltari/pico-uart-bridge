@@ -16,4 +16,6 @@
 #define CFG_TUD_CDC_RX_BUFSIZE 256
 #define CFG_TUD_CDC_TX_BUFSIZE 256
 
+void usbd_serial_init(void);
+
 #endif /* _TUSB_CONFIG_H_ */

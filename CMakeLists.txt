@@ -15,6 +15,7 @@ target_include_directories(uart_bridge PUBLIC
 	pico-sdk/lib/tinyusb/src)
 
 target_link_libraries(uart_bridge
+	hardware_flash
 	pico_multicore
 	pico_stdlib
 	tinyusb_device)
