@@ -9,6 +9,7 @@
  * Copyright (c) 2019 Damien P. George
  */
 
+#include <hardware/flash.h>
 #include <tusb.h>
 
 #define DESC_STR_MAX 20
@@ -36,6 +37,7 @@
 #define USBD_STR_MANUF 0x01
 #define USBD_STR_PRODUCT 0x02
 #define USBD_STR_SERIAL 0x03
+#define USBD_STR_SERIAL_LEN 17
 #define USBD_STR_CDC 0x04
 
 static const tusb_desc_device_t usbd_desc_device = {
@@ -71,7 +73,6 @@ static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
 static const char *const usbd_desc_str[] = {
 	[USBD_STR_MANUF] = "Raspberry Pi",
 	[USBD_STR_PRODUCT] = "Pico",
-	[USBD_STR_SERIAL] = "000000000000",
 	[USBD_STR_CDC] = "Board CDC",
 };
 
@@ -95,11 +96,23 @@ const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		len = 1;
 	} else {
 		const char *str;
+		char serial[USBD_STR_SERIAL_LEN];
 
 		if (index >= sizeof(usbd_desc_str) / sizeof(usbd_desc_str[0]))
 			return NULL;
 
-		str = usbd_desc_str[index];
+		if (index == USBD_STR_SERIAL) {
+			uint8_t id[8];
+
+			flash_get_unique_id(id);
+			sprintf(serial, "%02X%02X%02X%02X%02X%02X%02X%02X",
+				id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]);
+
+			str = serial;
+		} else {
+			str = usbd_desc_str[index];
+		}
+
 		for (len = 0; len < DESC_STR_MAX - 1 && str[len]; ++len)
 			desc_str[1 + len] = str[len];
 	}
