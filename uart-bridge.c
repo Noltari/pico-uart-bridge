@@ -240,7 +240,7 @@ void uart_write_bytes(uint8_t itf)
 
 		while (uart_is_writable(ui->inst) &&
 		       count < ud->usb_pos) {
-			uart_putc(ui->inst, ud->usb_buffer[count]);
+			uart_putc_raw(ui->inst, ud->usb_buffer[count]);
 			count++;
 		}
 
