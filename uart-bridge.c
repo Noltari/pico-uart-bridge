@@ -26,6 +26,8 @@
 
 typedef struct {
 	uart_inst_t *const inst;
+	uint irq;
+	void *irq_fn;
 	uint8_t tx_pin;
 	uint8_t rx_pin;
 } uart_id_t;
@@ -42,13 +44,20 @@ typedef struct {
 	mutex_t usb_mtx;
 } uart_data_t;
 
+void uart0_irq_fn(void);
+void uart1_irq_fn(void);
+
 const uart_id_t UART_ID[CFG_TUD_CDC] = {
 	{
 		.inst = uart0,
+		.irq = UART0_IRQ,
+		.irq_fn = &uart0_irq_fn,
 		.tx_pin = 0,
 		.rx_pin = 1,
 	}, {
 		.inst = uart1,
+		.irq = UART1_IRQ,
+		.irq_fn = &uart1_irq_fn,
 		.tx_pin = 4,
 		.rx_pin = 5,
 	}
@@ -119,14 +128,13 @@ void update_uart_cfg(uint8_t itf)
 	mutex_exit(&ud->lc_mtx);
 }
 
-void usb_read_bytes(uint8_t itf) {
+void usb_read_bytes(uint8_t itf)
+{
+	uart_data_t *ud = &UART_DATA[itf];
 	uint32_t len = tud_cdc_n_available(itf);
 
-	if (len) {
-		uart_data_t *ud = &UART_DATA[itf];
-
-		mutex_enter_blocking(&ud->usb_mtx);
-
+	if (len &&
+	    mutex_try_enter(&ud->usb_mtx, NULL)) {
 		len = MIN(len, BUFFER_SIZE - ud->usb_pos);
 		if (len) {
 			uint32_t count;
@@ -139,13 +147,13 @@ void usb_read_bytes(uint8_t itf) {
 	}
 }
 
-void usb_write_bytes(uint8_t itf) {
+void usb_write_bytes(uint8_t itf)
+{
 	uart_data_t *ud = &UART_DATA[itf];
 
-	if (ud->uart_pos) {
+	if (ud->uart_pos &&
+	    mutex_try_enter(&ud->uart_mtx, NULL)) {
 		uint32_t count;
-
-		mutex_enter_blocking(&ud->uart_mtx);
 
 		count = tud_cdc_n_write(itf, ud->uart_buffer, ud->uart_pos);
 		if (count < ud->uart_pos)
@@ -193,16 +201,16 @@ void core1_entry(void)
 	}
 }
 
-void uart_read_bytes(uint8_t itf) {
+static inline void uart_read_bytes(uint8_t itf)
+{
+	uart_data_t *ud = &UART_DATA[itf];
 	const uart_id_t *ui = &UART_ID[itf];
 
 	if (uart_is_readable(ui->inst)) {
-		uart_data_t *ud = &UART_DATA[itf];
-
 		mutex_enter_blocking(&ud->uart_mtx);
 
 		while (uart_is_readable(ui->inst) &&
-			ud->uart_pos < BUFFER_SIZE) {
+		       (ud->uart_pos < BUFFER_SIZE)) {
 			ud->uart_buffer[ud->uart_pos] = uart_getc(ui->inst);
 			ud->uart_pos++;
 		}
@@ -211,22 +219,42 @@ void uart_read_bytes(uint8_t itf) {
 	}
 }
 
-void uart_write_bytes(uint8_t itf) {
+void uart0_irq_fn(void)
+{
+	uart_read_bytes(0);
+}
+
+void uart1_irq_fn(void)
+{
+	uart_read_bytes(1);
+}
+
+void uart_write_bytes(uint8_t itf)
+{
 	uart_data_t *ud = &UART_DATA[itf];
 
-	if (ud->usb_pos) {
+	if (ud->usb_pos &&
+	    mutex_try_enter(&ud->usb_mtx, NULL)) {
 		const uart_id_t *ui = &UART_ID[itf];
+		uint32_t count = 0;
 
-		mutex_enter_blocking(&ud->usb_mtx);
+		while (uart_is_writable(ui->inst) &&
+		       count < ud->usb_pos) {
+			uart_putc(ui->inst, ud->usb_buffer[count]);
+			count++;
+		}
 
-		uart_write_blocking(ui->inst, ud->usb_buffer, ud->usb_pos);
-		ud->usb_pos = 0;
+		if (count < ud->usb_pos)
+			memcpy(ud->usb_buffer, &ud->usb_buffer[count],
+			       ud->usb_pos - count);
+		ud->usb_pos -= count;
 
 		mutex_exit(&ud->usb_mtx);
 	}
 }
 
-void init_uart_data(uint8_t itf) {
+void init_uart_data(uint8_t itf)
+{
 	const uart_id_t *ui = &UART_ID[itf];
 	uart_data_t *ud = &UART_DATA[itf];
 
@@ -261,6 +289,12 @@ void init_uart_data(uint8_t itf) {
 	uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
 			stopbits_usb2uart(ud->usb_lc.stop_bits),
 			parity_usb2uart(ud->usb_lc.parity));
+	uart_set_fifo_enabled(ui->inst, false);
+
+	/* UART RX Interrupt */
+	irq_set_exclusive_handler(ui->irq, ui->irq_fn);
+	irq_set_enabled(ui->irq, true);
+	uart_set_irq_enables(ui->inst, true, false);
 }
 
 int main(void)
@@ -282,7 +316,6 @@ int main(void)
 	while (1) {
 		for (itf = 0; itf < CFG_TUD_CDC; itf++) {
 			update_uart_cfg(itf);
-			uart_read_bytes(itf);
 			uart_write_bytes(itf);
 		}
 	}
