@@ -181,7 +181,7 @@ void core1_entry(void)
 		int con = 0;
 
 		tud_task();
-	
+
 		for (itf = 0; itf < CFG_TUD_CDC; itf++) {
 			if (tud_cdc_n_connected(itf)) {
 				con = 1;
