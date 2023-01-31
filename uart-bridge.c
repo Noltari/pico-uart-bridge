@@ -3,7 +3,9 @@
  * Copyright 2021 Álvaro Fernández Rojas <noltari@gmail.com>
  */
 
+#include <hardware/clocks.h>
 #include <hardware/irq.h>
+#include <hardware/resets.h>
 #include <hardware/structs/sio.h>
 #include <hardware/uart.h>
 #include <pico/multicore.h>
@@ -101,6 +103,155 @@ static inline uint stopbits_usb2uart(uint8_t stop_bits)
 	}
 }
 
+uint32_t uart_disable_before_lcr_write(uart_inst_t *uart)
+{
+    // Notes from PL011 reference manual:
+    //
+    // - Before writing LCR, must disable UART and wait for current TX + RX
+    //   char to finish
+    //
+    // - There is a BUSY flag which waits for the current TX char, but this is
+    //   OR'd with TX FIFO !FULL, so not usable when FIFOs are enabled and
+    //   potentially nonempty
+    //
+    // - FIFOs can't be set to disabled whilst a character is in progress
+    //   (else "FIFO integrity is not guaranteed")
+    //
+    // Combination of these means there is no general way to halt and poll for
+    // end of TX character, if FIFOs may be enabled. Either way, there is no
+    // way to poll for end of RX character.
+    //
+    // So... we're going to insert a 15 baud period delay before changing
+    // settings (comfortably higher than max data + start + stop + parity).
+    // Anything else would require API changes to permit a non-enabled UART
+    // state after init() where settings can be changed safely.
+
+    uint32_t cr_save = uart_get_hw(uart)->cr;
+    hw_clear_bits(&uart_get_hw(uart)->cr,
+        UART_UARTCR_UARTEN_BITS | UART_UARTCR_TXE_BITS | UART_UARTCR_RXE_BITS);
+
+    uint32_t current_ibrd = uart_get_hw(uart)->ibrd;
+    uint32_t current_fbrd = uart_get_hw(uart)->fbrd;
+    uint64_t baud_period_usec = 1u +
+        ((uint64_t)64 * current_ibrd + current_fbrd) /
+        (4u * clock_get_hz(clk_peri));
+
+    busy_wait_us(15 * baud_period_usec);
+
+    return cr_save;
+}
+
+void _uart_set_fifo_enabled(uart_inst_t *uart, bool enabled) {
+    bool was_enabled = uart_is_enabled(uart);
+    uint32_t cr_save;
+    if (was_enabled)
+        cr_save = uart_disable_before_lcr_write(uart);
+
+    hw_write_masked(&uart_get_hw(uart)->lcr_h,
+                   (bool_to_bit(enabled) << UART_UARTLCR_H_FEN_LSB),
+                   UART_UARTLCR_H_FEN_BITS);
+
+    if (was_enabled)
+        uart_get_hw(uart)->cr = cr_save;
+}
+
+uint _uart_set_baudrate(uart_inst_t *uart, uint baudrate) {
+    invalid_params_if(UART, baudrate == 0);
+    uint32_t baud_rate_div = (8 * clock_get_hz(clk_peri) / baudrate);
+    uint32_t baud_ibrd = baud_rate_div >> 7;
+    uint32_t baud_fbrd;
+
+    if (baud_ibrd == 0) {
+        baud_ibrd = 1;
+        baud_fbrd = 0;
+    } else if (baud_ibrd >= 65535) {
+        baud_ibrd = 65535;
+        baud_fbrd = 0;
+    }  else {
+        baud_fbrd = ((baud_rate_div & 0x7f) + 1) / 2;
+    }
+
+    // Need to cleanly disable UART before touching LCR
+    bool was_enabled = uart_is_enabled(uart);
+    uint32_t cr_save;
+    if (was_enabled)
+        cr_save = uart_disable_before_lcr_write(uart);
+
+    uart_get_hw(uart)->ibrd = baud_ibrd;
+    uart_get_hw(uart)->fbrd = baud_fbrd;
+    // PL011 needs a (dummy) LCR_H write to latch in the divisors. We don't
+    // want to actually change LCR_H contents here.
+    hw_set_bits(&uart_get_hw(uart)->lcr_h, 0);
+
+    // Re-enable using saved control register value
+    if (was_enabled)
+        uart_get_hw(uart)->cr = cr_save;
+
+    // See datasheet
+    return (4 * clock_get_hz(clk_peri)) / (64 * baud_ibrd + baud_fbrd);
+}
+
+void _uart_set_format(uart_inst_t *uart, uint data_bits, uint stop_bits, uart_parity_t parity) {
+    invalid_params_if(UART, data_bits < 5 || data_bits > 8);
+    invalid_params_if(UART, stop_bits != 1 && stop_bits != 2);
+    invalid_params_if(UART, parity != UART_PARITY_NONE && parity != UART_PARITY_EVEN && parity != UART_PARITY_ODD);
+
+    bool was_enabled = uart_is_enabled(uart);
+    uint32_t cr_save;
+    if (was_enabled)
+        cr_save = uart_disable_before_lcr_write(uart);
+
+    hw_write_masked(&uart_get_hw(uart)->lcr_h,
+                   ((data_bits - 5u) << UART_UARTLCR_H_WLEN_LSB) |
+                   ((stop_bits - 1u) << UART_UARTLCR_H_STP2_LSB) |
+                   (bool_to_bit(parity != UART_PARITY_NONE) << UART_UARTLCR_H_PEN_LSB) |
+                   (bool_to_bit(parity == UART_PARITY_EVEN) << UART_UARTLCR_H_EPS_LSB),
+                   UART_UARTLCR_H_WLEN_BITS |
+                   UART_UARTLCR_H_STP2_BITS |
+                   UART_UARTLCR_H_PEN_BITS |
+                   UART_UARTLCR_H_EPS_BITS);
+
+    if (was_enabled)
+        uart_get_hw(uart)->cr = cr_save;
+}
+
+static inline void uart_reset(uart_inst_t *uart) {
+    invalid_params_if(UART, uart != uart0 && uart != uart1);
+    reset_block(uart_get_index(uart) ? RESETS_RESET_UART1_BITS : RESETS_RESET_UART0_BITS);
+}
+
+static inline void uart_unreset(uart_inst_t *uart) {
+    invalid_params_if(UART, uart != uart0 && uart != uart1);
+    unreset_block_wait(uart_get_index(uart) ? RESETS_RESET_UART1_BITS : RESETS_RESET_UART0_BITS);
+}
+
+uint _uart_init(uart_inst_t *uart, uint baudrate) {
+    invalid_params_if(UART, uart != uart0 && uart != uart1);
+
+    if (clock_get_hz(clk_peri) == 0)
+        return 0;
+
+    uart_reset(uart);
+    uart_unreset(uart);
+
+#if PICO_UART_ENABLE_CRLF_SUPPORT
+    uart_set_translate_crlf(uart, PICO_UART_DEFAULT_CRLF);
+#endif
+
+    // Any LCR writes need to take place before enabling the UART
+    uint baud = _uart_set_baudrate(uart, baudrate);
+    _uart_set_format(uart, 8, 1, UART_PARITY_NONE);
+
+    // Enable FIFOs (must be before setting UARTEN, as this is an LCR access)
+    hw_set_bits(&uart_get_hw(uart)->lcr_h, UART_UARTLCR_H_FEN_BITS);
+    // Enable the UART, both TX and RX
+    uart_get_hw(uart)->cr = UART_UARTCR_UARTEN_BITS | UART_UARTCR_TXE_BITS | UART_UARTCR_RXE_BITS;
+    // Always enable DREQ signals -- no harm in this if DMA is not listening
+    uart_get_hw(uart)->dmacr = UART_UARTDMACR_TXDMAE_BITS | UART_UARTDMACR_RXDMAE_BITS;
+
+    return baud;
+}
+
 void update_uart_cfg(uint8_t itf)
 {
 	const uart_id_t *ui = &UART_ID[itf];
@@ -109,17 +260,17 @@ void update_uart_cfg(uint8_t itf)
 	mutex_enter_blocking(&ud->lc_mtx);
 
 	if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
-		uart_set_baudrate(ui->inst, ud->usb_lc.bit_rate);
+		_uart_set_baudrate(ui->inst, ud->usb_lc.bit_rate);
 		ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
 	}
 
 	if ((ud->usb_lc.stop_bits != ud->uart_lc.stop_bits) ||
 	    (ud->usb_lc.parity != ud->uart_lc.parity) ||
 	    (ud->usb_lc.data_bits != ud->uart_lc.data_bits)) {
-		uart_set_format(ui->inst,
-				databits_usb2uart(ud->usb_lc.data_bits),
-				stopbits_usb2uart(ud->usb_lc.stop_bits),
-				parity_usb2uart(ud->usb_lc.parity));
+		_uart_set_format(ui->inst,
+				 databits_usb2uart(ud->usb_lc.data_bits),
+				 stopbits_usb2uart(ud->usb_lc.stop_bits),
+				 parity_usb2uart(ud->usb_lc.parity));
 		ud->uart_lc.data_bits = ud->usb_lc.data_bits;
 		ud->uart_lc.parity = ud->usb_lc.parity;
 		ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
@@ -284,12 +435,12 @@ void init_uart_data(uint8_t itf)
 	mutex_init(&ud->usb_mtx);
 
 	/* UART start */
-	uart_init(ui->inst, ud->usb_lc.bit_rate);
+	_uart_init(ui->inst, ud->usb_lc.bit_rate);
 	uart_set_hw_flow(ui->inst, false, false);
-	uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
-			stopbits_usb2uart(ud->usb_lc.stop_bits),
-			parity_usb2uart(ud->usb_lc.parity));
-	uart_set_fifo_enabled(ui->inst, false);
+	_uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
+			 stopbits_usb2uart(ud->usb_lc.stop_bits),
+			 parity_usb2uart(ud->usb_lc.parity));
+	_uart_set_fifo_enabled(ui->inst, false);
 
 	/* UART RX Interrupt */
 	irq_set_exclusive_handler(ui->irq, ui->irq_fn);
