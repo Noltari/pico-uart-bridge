@@ -157,7 +157,7 @@ void usb_write_bytes(uint8_t itf)
 
 		count = tud_cdc_n_write(itf, ud->uart_buffer, ud->uart_pos);
 		if (count < ud->uart_pos)
-			memcpy(ud->uart_buffer, &ud->uart_buffer[count],
+			memmove(ud->uart_buffer, &ud->uart_buffer[count],
 			       ud->uart_pos - count);
 		ud->uart_pos -= count;
 
@@ -245,7 +245,7 @@ void uart_write_bytes(uint8_t itf)
 		}
 
 		if (count < ud->usb_pos)
-			memcpy(ud->usb_buffer, &ud->usb_buffer[count],
+			memmove(ud->usb_buffer, &ud->usb_buffer[count],
 			       ud->usb_pos - count);
 		ud->usb_pos -= count;
 
