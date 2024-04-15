@@ -11,9 +11,13 @@ This software is provided without warranty, according to the MIT License, and sh
 Raspberry Pi Pico Pinout
 ------------------------
 
-| Raspberry Pi Pico GPIO | Function |
-|:----------------------:|:--------:|
-| GPIO16 (Pin 21)        | UART0 TX |
-| GPIO17 (Pin 22)        | UART0 RX |
-| GPIO4 (Pin 6)          | UART1 TX |
-| GPIO5 (Pin 7)          | UART1 RX |
+| Raspberry Pi Pico GPIO | Function     |
+|:----------------------:|:------------:|
+| GPIO0 (Pin 1)          | UART0 TX     |
+| GPIO1 (Pin 2)          | UART0 RX     |
+| GPIO19 (Pin 25)        | UART0 TX LED |
+| GPIO18 (Pin 24)        | UART0 RX LED |
+| GPIO4 (Pin 6)          | UART1 TX     |
+| GPIO5 (Pin 7)          | UART1 RX     |
+| GPIO17 (Pin 22)        | UART1 TX LED |
+| GPIO16 (Pin 21)        | UART1 RX LED |
