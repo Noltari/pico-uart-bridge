@@ -206,17 +206,36 @@ static inline void uart_read_bytes(uint8_t itf)
 	uart_data_t *ud = &UART_DATA[itf];
 	const uart_id_t *ui = &UART_ID[itf];
 
-	if (uart_is_readable(ui->inst)) {
-		mutex_enter_blocking(&ud->uart_mtx);
+	if (!uart_is_readable(ui->inst))
+		return;
 
-		while (uart_is_readable(ui->inst) &&
-		       (ud->uart_pos < BUFFER_SIZE)) {
-			ud->uart_buffer[ud->uart_pos] = uart_getc(ui->inst);
-			ud->uart_pos++;
-		}
-
-		mutex_exit(&ud->uart_mtx);
+	/*
+	 * Runs in the IRQ handler, so never block and never return with bytes
+	 * left in the FIFO.
+	 *
+	 * Blocking on uart_mtx hangs the bridge: core1 holds it while writing
+	 * to USB, and that write stalls when the host is not reading. Leaving
+	 * data in the FIFO keeps the RX interrupt asserted, so the handler just
+	 * fires again and gets nowhere.
+	 *
+	 * Either way USB stays enumerated while no data moves, and only a
+	 * replug recovers it.
+	 */
+	if (!mutex_try_enter(&ud->uart_mtx, NULL)) {
+		while (uart_is_readable(ui->inst))
+			(void)uart_getc(ui->inst);
+		return;
 	}
+
+	while (uart_is_readable(ui->inst)) {
+		const uint8_t ch = uart_getc(ui->inst);
+
+		if (ud->uart_pos < BUFFER_SIZE)
+			ud->uart_buffer[ud->uart_pos++] = ch;
+		/* Host is not keeping up. Drop it rather than hang. */
+	}
+
+	mutex_exit(&ud->uart_mtx);
 }
 
 void uart0_irq_fn(void)
