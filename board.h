@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: MIT
+
+#ifndef _BOARD_H_
+#define _BOARD_H_
+
+#if !defined(BOARD_UART0_TX_PIN)
+	#if defined(WAVESHARE_RP2040_ZERO) || \
+		defined(WAVESHARE_RP2040_ONE) || \
+		defined(WAVESHARE_RP2350_ZERO)
+		#define BOARD_UART0_TX_PIN PICO_DEFAULT_UART_TX_PIN
+	#else
+		#define BOARD_UART0_TX_PIN 16
+	#endif /* WAVESHARE_RP2040_ZERO ||
+			  WAVESHARE_RP2040_ONE ||
+			  WAVESHARE_RP2350_ZERO */
+#endif /* BOARD_UART0_TX_PIN */
+
+#if !defined(BOARD_UART0_RX_PIN)
+	#if defined(WAVESHARE_RP2040_ZERO) || \
+		defined(WAVESHARE_RP2040_ONE) || \
+		defined(WAVESHARE_RP2350_ZERO)
+		#define BOARD_UART0_RX_PIN PICO_DEFAULT_UART_RX_PIN
+	#else
+		#define BOARD_UART0_RX_PIN 17
+	#endif /* WAVESHARE_RP2040_ZERO ||
+			  WAVESHARE_RP2040_ONE ||
+			  WAVESHARE_RP2350_ZERO */
+#endif /* BOARD_UART0_RX_PIN */
+
+#ifndef BOARD_UART1_TX_PIN
+	#define BOARD_UART1_TX_PIN 4
+#endif /* BOARD_UART1_TX_PIN */
+
+#ifndef BOARD_UART1_RX_PIN
+	#define BOARD_UART1_RX_PIN 5
+#endif /* BOARD_UART1_RX_PIN */
+
+#endif /* _BOARD_H_ */

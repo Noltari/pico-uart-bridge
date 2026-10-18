@@ -7,15 +7,16 @@
 #include <hardware/structs/sio.h>
 #include <hardware/uart.h>
 #include <pico/multicore.h>
+#include <pico/status_led.h>
 #include <pico/stdlib.h>
 #include <string.h>
 #include <tusb.h>
 
+#include "board.h"
+
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
 #endif /* MIN */
-
-#define LED_PIN 25
 
 #define BUFFER_SIZE 2560
 
@@ -52,14 +53,14 @@ const uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.inst = uart0,
 		.irq = UART0_IRQ,
 		.irq_fn = &uart0_irq_fn,
-		.tx_pin = 16,
-		.rx_pin = 17,
+		.tx_pin = BOARD_UART0_TX_PIN,
+		.rx_pin = BOARD_UART0_RX_PIN,
 	}, {
 		.inst = uart1,
 		.irq = UART1_IRQ,
 		.irq_fn = &uart1_irq_fn,
-		.tx_pin = 4,
-		.rx_pin = 5,
+		.tx_pin = BOARD_UART1_TX_PIN,
+		.rx_pin = BOARD_UART1_RX_PIN,
 	}
 };
 
@@ -182,6 +183,8 @@ void usb_cdc_process(uint8_t itf)
 
 void core1_entry(void)
 {
+	const bool led_ready = status_led_init();
+
 	tusb_init();
 
 	while (1) {
@@ -197,7 +200,8 @@ void core1_entry(void)
 			}
 		}
 
-		gpio_put(LED_PIN, con);
+		if (led_ready)
+			status_led_set_state(con);
 	}
 }
 
@@ -324,9 +328,6 @@ int main(void)
 
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
 		init_uart_data(itf);
-
-	gpio_init(LED_PIN);
-	gpio_set_dir(LED_PIN, GPIO_OUT);
 
 	multicore_launch_core1(core1_entry);
 
