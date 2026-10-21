@@ -184,6 +184,7 @@ void usb_cdc_process(uint8_t itf)
 void core1_entry(void)
 {
 	const bool led_ready = status_led_init();
+	int led_state = -1;
 
 	tusb_init();
 
@@ -200,8 +201,12 @@ void core1_entry(void)
 			}
 		}
 
-		if (led_ready)
-			status_led_set_state(con);
+		if (led_ready && (con != led_state)) {
+			if (status_led_set_state(con))
+			{
+				led_state = con;
+			}
+		}
 	}
 }
 

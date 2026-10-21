@@ -30,12 +30,18 @@ run without a status LED. RGB LEDs use the SDK's default color.
 | `PICO_BOARD` | UART0 TX / RX | UART1 TX / RX | Status LED |
 |:-------------|:--------------|:--------------|:-----------|
 | `pico` (default) | GP16 / GP17 | GP4 / GP5 | GPIO LED, GP25 |
+| `pico_w` | GP16 / GP17 | GP4 / GP5 | CYW43 LED |
 | `pico2` | GP16 / GP17 | GP4 / GP5 | GPIO LED, GP25 |
+| `pico2_w` | GP16 / GP17 | GP4 / GP5 | CYW43 LED |
 | `waveshare_rp2040_zero` | GP0 / GP1 | GP4 / GP5 | WS2812, GP16 |
 | `waveshare_rp2040_one` | GP0 / GP1 | GP4 / GP5 | WS2812, GP16 |
 | `waveshare_rp2350_zero` | GP0 / GP1 | GP4 / GP5 | WS2812, GP16 |
 | `pimoroni_tiny2040_2mb` (2 MB) | GP0 / GP1 | GP4 / GP5 | Green GPIO LED, GP19 (active low) |
 | `pimoroni_tiny2040` (8 MB) | GP0 / GP1 | GP4 / GP5 | Green GPIO LED, GP19 (active low) |
+
+The LED is updated only when the connection state changes, avoiding redundant
+CYW43 driver calls on wireless boards. These boards do not need Wi-Fi networking
+enabled to use their LED; the SDK handles the required driver initialization.
 
 The bridge preserves its original Pico UART wiring rather than adopting the
 SDK's default UART pins for every board. Other SDK boards use that wiring unless

@@ -14,8 +14,12 @@ jobs:
         include:
           - board: pico
             name: Raspberry Pi Pico
+          - board: pico_w
+            name: Raspberry Pi Pico W
           - board: pico2
             name: Raspberry Pi Pico 2
+          - board: pico2_w
+            name: Raspberry Pi Pico 2 W
           - board: waveshare_rp2040_zero
             name: Waveshare RP2040-Zero
           - board: waveshare_rp2040_one
