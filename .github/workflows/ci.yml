@@ -22,7 +22,8 @@ jobs:
 
       - name: 'Install dependencies'
         run: |
-          sudo apt-get install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi
+          sudo apt update
+          sudo apt install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi
 
       - name: 'Update Submodules'
         run: |
